@@ -28,4 +28,17 @@ print(df.shape)
 
 print(df.isna().sum())
 
-df.to_csv('new_emergency.csv')
+test = pd.DataFrame(df.iloc[:, 6:df.columns.get_loc("cc_abdominalcramping")])
+
+too_little = []
+
+for i in test.columns:
+    if test[i].sum() < 50:
+        too_little.append(i)
+
+for i in too_little:
+    df = df[df[i] != 1]
+    df = df.drop(columns = i)
+    df.reset_index(drop=True)
+
+print(df.shape)
