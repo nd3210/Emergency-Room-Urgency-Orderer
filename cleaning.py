@@ -42,3 +42,5 @@ for i in too_little:
     df.reset_index(drop=True)
 
 print(df.shape)
+
+df.to_csv('new_emergency.csv')
