@@ -4,7 +4,7 @@ import pandas as pd
 df = pd.read_csv('emergency.csv')
 
 df = df.drop(columns = ['dep_name', 'ethnicity', 'race', 'lang', 'religion', 'maritalstatus', 'employstatus', 'insurance_status', 'arrivalmode',
-                        'disposition', 'previousdispo'])
+                        'disposition', 'previousdispo', 'arrivalmonth', 'arrivalday', 'arrivalhour_bin'])
 
 suffix = ('_last', '_min', '_max', '_median', '_count', '_npos')
 removed_col  = [x for x in df.columns if x.endswith(suffix)]
@@ -46,5 +46,4 @@ print(df.shape)
 df = df.dropna(axis=0)
 
 print(df.shape)       
-
 df.to_csv('new_emergency.csv')
