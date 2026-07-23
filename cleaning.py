@@ -45,5 +45,18 @@ print(df.shape)
 
 df = df.dropna(axis=0)
 
-print(df.shape)       
+print(df.shape)    
+
+df['cc_abdominalpain'] = df['cc_abdominalcramping'] + df['cc_abdominalpain']
+df['cc_breathingdifficulty'] = df['cc_breathingproblem'] + df['cc_breathingdifficulty'] + df['cc_dyspnea']
+df['cc_addictionproblem'] = df['cc_alcoholproblem'] + df['cc_drugproblem']
+df['cc_overdose'] = df['cc_overdose-accidental'] + df['cc_overdose-intentional']
+df['cc_giproblem'] = df['cc_gibleeding'] + df['cc_giproblem']
+
+
+df = df.drop(columns= ['cc_abdominalcramping', 'cc_breathingproblem', 'cc_addictionproblem', 'cc_dyspnea', 'cc_overdose-accidental', 
+                       'cc_overdose-intentional'])
+
+
+print(df.shape)
 df.to_csv('new_emergency.csv')
