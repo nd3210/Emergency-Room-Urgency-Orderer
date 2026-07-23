@@ -43,4 +43,8 @@ for i in too_little:
 
 print(df.shape)
 
+df = df.dropna(axis=0)
+
+print(df.shape)       
+
 df.to_csv('new_emergency.csv')
