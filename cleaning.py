@@ -48,15 +48,36 @@ df = df.dropna(axis=0)
 print(df.shape)    
 
 df['cc_abdominalpain'] = df['cc_abdominalcramping'] + df['cc_abdominalpain']
+df = df.copy()
 df['cc_breathingdifficulty'] = df['cc_breathingproblem'] + df['cc_breathingdifficulty'] + df['cc_dyspnea']
+df = df.copy()
 df['cc_addictionproblem'] = df['cc_alcoholproblem'] + df['cc_drugproblem']
+df = df.copy()
 df['cc_overdose'] = df['cc_overdose-accidental'] + df['cc_overdose-intentional']
+df = df.copy()
 df['cc_giproblem'] = df['cc_gibleeding'] + df['cc_giproblem']
+df = df.copy()
+df['cc_ankleinjury/pain'] = df['cc_ankleinjury'] + df['cc_anklepain']
+df = df.copy()
+df['cc_arminjury/pain'] = df['cc_arminjury'] + df['cc_armpain']
+df = df.copy()
+df['cc_chestpain'] = df['cc_chestpain'] + df['cc_chesttightness']
+df = df.copy()
+df['cc_wristinjury/pain'] = df['cc_wristinjury'] + df['cc_wristpain']
+df = df.copy()
+df['cc_ribinjury/pain'] = df['cc_ribinjury'] + df['cc_ribpain']
+df = df.copy()
+df['cc_fingerinjury/pain'] = df['cc_fingerpain'] + df['cc_fingerinjury']
+df = df.copy()
+df['cc_handinjury/pain'] = df['cc_handinjury'] + df['cc_handpain']
+df = df.copy()
 
+df = df[df['cc_other']==0]
 
 df = df.drop(columns= ['cc_abdominalcramping', 'cc_breathingproblem', 'cc_addictionproblem', 'cc_dyspnea', 'cc_overdose-accidental', 
-                       'cc_overdose-intentional'])
-
+                       'cc_overdose-intentional', 'cc_gibleeding', 'cc_ankleinjury', 'cc_anklepain', 'cc_chestpain', 'cc_chesttightness',
+                       'cc_edema', 'cc_wristinjury', 'cc_wristpain', 'cc_medicalproblem', 'cc_other', 'cc_ribinjury', 'cc_ribpain',
+                       'cc_fingerpain', 'cc_fingerinjury', 'cc_homicidal'])
 
 print(df.shape)
 df.to_csv('new_emergency.csv')
