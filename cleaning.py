@@ -14,6 +14,13 @@ prefix = ('meds', 'n_', 'triage_vital_')
 removed_col = [x for x in df.columns if x.startswith(prefix)]
 df = df.drop(columns = removed_col)
 
+removed_col = []
+for i in df.columns:
+    if i not in ('esi', 'gender', 'age') and not i.startswith('cc_'):
+        removed_col.append(i)
+
+df = df.drop(columns=removed_col)
+
 print(df.shape)
 
 df = df.drop_duplicates()
@@ -80,4 +87,5 @@ df = df.drop(columns= ['cc_abdominalcramping', 'cc_breathingproblem', 'cc_addict
                        'cc_fingerpain', 'cc_fingerinjury', 'cc_homicidal'])
 
 print(df.shape)
+
 df.to_csv('new_emergency.csv')
