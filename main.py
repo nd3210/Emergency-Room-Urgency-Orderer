@@ -88,79 +88,74 @@ X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2,
 #XGBooster
 sample_weights = compute_sample_weight(class_weight='balanced', y=y_train)
 
-# xgb_model = XGBClassifier(
-#     n_estimators=500,
-#     learning_rate=0.1,
-#     verbosity=1,
-#     random_state=42,
-#     num_class=5,
-#     max_depth=6,
-#     eval_metric='mlogloss',
-#     objective='multi:softprob'
-# )
-# xgb_model.fit(X_train, y_train, sample_weight=sample_weights)
-
-# # make predictions for test data
-# y_pred = xgb_model.predict(X_test) 
-
-# # evaluate predictions
-# accuracy = accuracy_score(y_test, y_pred)
-# print("Accuracy: %.2f%%" % (accuracy * 100.0))
-
-# importances = pd.Series(xgb_model.feature_importances_, index=X.columns)
-# print("\nTop 15 most important features:")
-# print(importances.sort_values(ascending=False).head(15))
-# print(classification_report(y_test, y_pred))
-
-param_dist = {
-    'max_depth': randint(3, 11),              # deeper isn't always better; let search decide
-    'learning_rate': uniform(0.01, 0.29),      # 0.01 - 0.30
-    'n_estimators': randint(150, 800),
-    'subsample': uniform(0.6, 0.4),            # 0.6 - 1.0, row sampling per tree
-    'colsample_bytree': uniform(0.6, 0.4),     # 0.6 - 1.0, feature sampling per tree
-    'min_child_weight': randint(1, 8),         # higher = more conservative splits
-    'gamma': uniform(0, 0.5),                  # minimum loss reduction to split further
-    'reg_alpha': uniform(0, 1),                # L1 regularization
-    'reg_lambda': uniform(0.5, 2),             # L2 regularization
-}
- 
-base_model = XGBClassifier(
-    num_class=5,
+xgb_model = XGBClassifier(
     objective='multi:softprob',
+    num_class=5,
     eval_metric='mlogloss',
     random_state=42,
-    verbosity=0,
-    n_jobs=1
+    n_jobs=1,
+    colsample_bytree=0.7901480892728447,
+    gamma=0.28163778598819184,
+    learning_rate=0.21169966506357696,
+    max_depth=7,
+    min_child_weight=7,
+    n_estimators=380,
+    reg_alpha=0.41038292303562973,
+    reg_lambda=2.0111022770860973,
+    subsample=0.6915192661966489,
 )
- 
-# scoring='recall_macro' — averages recall equally across all 5 classes,
-# which matters far more here than plain accuracy given your class imbalance
-random_search = RandomizedSearchCV(
-    base_model,
-    param_distributions=param_dist,
-    n_iter=40,              # 40 random combinations — good coverage without excessive runtime
-    scoring='recall_macro',
-    cv=3,
-    random_state=42,
-    n_jobs=-1,
-    verbose=2
-)
- 
-random_search.fit(X_train, y_train, sample_weight=sample_weights)
- 
-print("\n=== RandomizedSearchCV results ===")
-print("Best params:", random_search.best_params_)
-print("Best CV recall_macro:", round(random_search.best_score_, 4))
- 
-best_xgb = random_search.best_estimator_
-tuned_pred = best_xgb.predict(X_test)
-tuned_proba = best_xgb.predict_proba(X_test)
- 
-print("Test Accuracy:", accuracy_score(y_test, tuned_pred))
-print("Test Log Loss:", log_loss(y_test, tuned_proba))
-print(classification_report(y_test, tuned_pred, target_names=[str(c) for c in le.classes_]))
-print(confusion_matrix(y_test, tuned_pred))
- 
-tuned_importances = pd.Series(best_xgb.feature_importances_, index=X.columns)
-print("\nTop 15 most important features (tuned model):")
-print(tuned_importances.sort_values(ascending=False).head(15))
+xgb_model.fit(X_train, y_train, sample_weight= sample_weights)
+probs = xgb_model.predict_proba(X_test)
+
+
+override = ['cc_cardiacarrest', 'cc_unresponsive', 'cc_strokealert']
+override = [c for c in override if c in X_test.columns]
+
+
+def apply_overrides(probs, preds):
+    preds = preds.copy()
+    if override:
+        critical_mask = (probs[override].sum(axis=1) > 0).values
+        preds[critical_mask] = 0
+    return preds
+
+
+def predict_with_threshold(probs, threshold):
+    esi1_prob = probs[:, 0]
+    x_pred = xgb_model.predict(X_test)
+    return np.where(esi1_prob >= threshold, 0, x_pred)
+
+
+for threshold in [0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.07, 0.05]:
+    preds = predict_with_threshold(probs, threshold)
+    preds = apply_overrides(X_test, preds)
+    esi1_true = (y_test == 0)
+    esi1_recall = (preds[esi1_true] == 0).mean() if esi1_true.sum() > 0 else float('nan')
+    esi1_precision = (y_test[preds == 0] == 0).mean() if (preds == 0).sum() > 0 else float('nan')
+    print(f"threshold={threshold:.2f}  ESI1 recall={esi1_recall:.3f}  "
+          f"ESI1 precision={esi1_precision:.3f}  flagged as ESI1={np.sum(preds == 0)}")
+
+thresh = 0.30
+
+final_preds = predict_with_threshold(probs, thresh)
+final_preds = apply_overrides(X_test, final_preds)
+
+print(f"\n=== Final evaluation (threshold={thresh}, overrides applied) ===")
+print("Accuracy:", accuracy_score(y_test, final_preds))
+print(classification_report(y_test, final_preds, target_names=[str(c) for c in le.classes_]))
+print(confusion_matrix(y_test, final_preds))
+
+esi_values = np.array([1, 2, 3, 4, 5])
+severity_score = probs @ esi_values
+overridden_mask = (final_preds == 0)
+severity_score[overridden_mask] = 1.0
+
+queue = pd.DataFrame({
+    'severity_score': severity_score,
+    'predicted_esi': le.inverse_transform(final_preds),
+    'true_esi': le.inverse_transform(y_test),
+})
+queue = queue.sort_values('severity_score')
+
+print("\n=== Sample of ranked queue (most urgent first) ===")
+print(queue.head(10))
