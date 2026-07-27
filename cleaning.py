@@ -14,18 +14,12 @@ prefix = ('meds', 'n_', 'triage_vital_')
 removed_col = [x for x in df.columns if x.startswith(prefix)]
 df = df.drop(columns = removed_col)
 
-removed_col = []
-for i in df.columns:
-    if i not in ('esi', 'gender', 'age') and not i.startswith('cc_'):
-        removed_col.append(i)
-
-df = df.drop(columns=removed_col)
+keep_cols = ['esi', 'age', 'gender']
+cc_cols = [c for c in df.columns if c.startswith('cc_')]
+df = df[keep_cols + cc_cols]
 
 print(df.shape)
 
-df = df.drop_duplicates()
-df = df.reset_index(drop=True)
-print(df.shape)
 
 print(df.isna().sum())
 
@@ -33,26 +27,7 @@ df = df[(df['age'] > 0) & (df['esi'] > 0) & (df['esi'] < 6)]
 df = df.reset_index(drop=True)
 print(df.shape)
 
-print(df.isna().sum())
-
-test = pd.DataFrame(df.iloc[:, 6:df.columns.get_loc("cc_abdominalcramping")])
-
-too_little = []
-
-for i in test.columns:
-    if test[i].sum() < 50:
-        too_little.append(i)
-
-for i in too_little:
-    df = df[df[i] != 1]
-    df = df.drop(columns = i)
-    df.reset_index(drop=True)
-
-print(df.shape)
-
-df = df.dropna(axis=0)
-
-print(df.shape)    
+print(df.isna().sum())    
 
 df['cc_abdominalpain'] = df['cc_abdominalcramping'] + df['cc_abdominalpain']
 df = df.copy()
@@ -88,4 +63,21 @@ df = df.drop(columns= ['cc_abdominalcramping', 'cc_breathingproblem', 'cc_addict
 
 print(df.shape)
 
-df.to_csv('new_emergency.csv')
+test = df[[c for c in df.columns if c.startswith('cc_')]]
+
+too_little = []
+
+for i in test.columns:
+    if test[i].sum() < 50:
+        too_little.append(i)
+
+df = df.drop(columns=too_little)
+df = df.reset_index(drop=True)
+
+print(df.shape)
+
+df = df.dropna(axis=0)
+
+print(df.shape)
+
+df.to_csv('new_emergency.csv', index = False)
