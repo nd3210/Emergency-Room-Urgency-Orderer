@@ -4,3 +4,4 @@ workshop.venv/
 .DS_Store
 workshop.venv/
 .DS_Store
+model_artifacts
