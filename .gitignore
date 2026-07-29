@@ -5,3 +5,5 @@ workshop.venv/
 workshop.venv/
 .DS_Store
 model_artifacts
+data_visualization.py
+nn_search_results.csv
