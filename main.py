@@ -163,10 +163,8 @@ random.seed(42)
 np.random.seed(42)
 
 N_ITER = 15
-USE_ORDINAL = True
 SELECTION_METRIC = 'qwk'
 N_CLASSES = 5
-USE_OVERRIDE = True
 OVERRIDE_COLS = ['cc_cardiacarrest', 'cc_unresponsive', 'cc_strokealert']
  
 df = pd.read_csv('new_emergency.csv')
@@ -198,9 +196,7 @@ if override_mask.sum() > 0:
     true_esi1_among_override = (y_encoded[override_mask] == 0).mean()
     print(f"Of those, fraction actually labeled ESI1 in the data: {true_esi1_among_override:.3f} "
           f"(sanity check on how trustworthy this rule is)")
- 
-if not USE_OVERRIDE:
-    override_mask = np.zeros(len(X), dtype=bool)
+
  
 X_temp, X_test, y_temp, y_test, ovr_temp, ovr_test = train_test_split(
     X, y_encoded, override_mask, test_size=0.2, random_state=42, stratify=y_encoded
@@ -296,13 +292,13 @@ def coral_labels(y, n_classes=5):
     return (y.unsqueeze(1) > thresholds).float()
  
  
-def coral_probs_to_class_probs(probs, n_classes=5):
-    batch = probs.shape[0]
+def coral_probs_to_class_probs(cum_probs, n_classes=5):
+    batch = cum_probs.shape[0]
     p = np.zeros((batch, n_classes))
-    p[:, 0] = 1 - probs[:, 0]
+    p[:, 0] = 1 - cum_probs[:, 0]
     for k in range(1, n_classes - 1):
-        p[:, k] = probs[:, k - 1] - probs[:, k]
-    p[:, n_classes - 1] = probs[:, n_classes - 2]
+        p[:, k] = cum_probs[:, k - 1] - cum_probs[:, k]
+    p[:, n_classes - 1] = cum_probs[:, n_classes - 2]
     p = np.clip(p, 0, None)
     p = p / p.sum(axis=1, keepdims=True)
     return p 
@@ -330,9 +326,8 @@ def compute_metrics(y_true, y_pred):
  
 def train_one_config(config, max_epochs=40, patience=6):
     model = ConfigurableNet(n_features, config['hidden_dims'], config['dropout'],
-                             ordinal=USE_ORDINAL, n_classes=N_CLASSES).to(device)
-    if USE_ORDINAL:
-        bce = nn.BCEWithLogitsLoss(reduction='none')
+                             ordinal=True, n_classes=N_CLASSES).to(device)
+    bce = nn.BCEWithLogitsLoss(reduction='none')
     optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'],
                                   weight_decay=config['weight_decay'])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
@@ -348,14 +343,9 @@ def train_one_config(config, max_epochs=40, patience=6):
             xb, yb, wb = xb.to(device), yb.to(device), wb.to(device)
             optimizer.zero_grad()
             logits = model(xb)
-            if USE_ORDINAL:
-                targets = coral_labels(yb, N_CLASSES)
-                per_task_loss = bce(logits, targets).mean(dim=1)
-                loss = (per_task_loss * wb).mean()
-            else:
-                per_sample_loss = nn.functional.cross_entropy(
-                    logits, yb, weight=class_weights_tensor.to(device), reduction='none')
-                loss = (per_sample_loss * wb).mean()
+            targets = coral_labels(yb, N_CLASSES)
+            per_task_loss = bce(logits, targets).mean(dim=1)
+            loss = (per_task_loss * wb).mean()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -363,12 +353,8 @@ def train_one_config(config, max_epochs=40, patience=6):
         model.eval()
         with torch.no_grad():
             val_logits = model(X_val_tensor.to(device))
-            if USE_ORDINAL:
-                val_targets = coral_labels(y_val_tensor.to(device), N_CLASSES)
-                val_loss = nn.functional.binary_cross_entropy_with_logits(val_logits, val_targets).item()
-            else:
-                val_loss = nn.functional.cross_entropy(
-                    val_logits, y_val_tensor.to(device), weight=class_weights_tensor.to(device)).item()
+            val_targets = coral_labels(y_val_tensor.to(device), N_CLASSES)
+            val_loss = nn.functional.binary_cross_entropy_with_logits(val_logits, val_targets).item()
         scheduler.step(val_loss)
  
         if val_loss < best_val_loss - 1e-4:
@@ -384,11 +370,8 @@ def train_one_config(config, max_epochs=40, patience=6):
     model.eval()
     with torch.no_grad():
         val_logits = model(X_val_tensor.to(device))
-        if USE_ORDINAL:
-            cum_probs = torch.sigmoid(val_logits).cpu().numpy()
-            val_probs = coral_probs_to_class_probs(cum_probs, N_CLASSES)
-        else:
-            val_probs = torch.softmax(val_logits, dim=1).cpu().numpy()
+        cum_probs = torch.sigmoid(val_logits).cpu().numpy()
+        val_probs = coral_probs_to_class_probs(cum_probs, N_CLASSES)
         val_preds = np.argmax(val_probs, axis=1)
  
     metrics = compute_metrics(y_val, val_preds)
@@ -425,11 +408,8 @@ best_model = best_overall['model']
 best_model.eval()
 with torch.no_grad():
     test_logits = best_model(X_test_tensor.to(device))
-    if USE_ORDINAL:
-        cum_probs = torch.sigmoid(test_logits).cpu().numpy()
-        test_probs = coral_probs_to_class_probs(cum_probs, N_CLASSES)
-    else:
-        test_probs = torch.softmax(test_logits, dim=1).cpu().numpy()
+    cum_probs = torch.sigmoid(test_logits).cpu().numpy()
+    test_probs = coral_probs_to_class_probs(cum_probs, N_CLASSES)
 model_preds = np.argmax(test_probs, axis=1)
  
 final_preds = np.where(ovr_test, 0, model_preds)
@@ -463,7 +443,6 @@ torch.save(best_model.state_dict(), 'model_artifacts/nn_search_best.pt')
 with open('model_artifacts/nn_search_best_config.json', 'w') as f:
     json.dump({
         **{k: (list(v) if isinstance(v, tuple) else v) for k, v in best_overall['config'].items()},
-        'use_ordinal': USE_ORDINAL,
         'selection_metric': SELECTION_METRIC,
         'override_cols': OVERRIDE_COLS,
         'n_features': n_features,
