@@ -195,10 +195,7 @@ import joblib
 torch.manual_seed(42)
 random.seed(42)
 np.random.seed(42)
- 
-# ---------------------------------------------------------
-# Config
-# ---------------------------------------------------------
+
 N_ITER = 15
 USE_ORDINAL = True
 SELECTION_METRIC = 'qwk'
