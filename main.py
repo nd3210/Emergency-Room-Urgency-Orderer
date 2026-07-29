@@ -289,9 +289,8 @@ class ConfigurableNet(nn.Module):
  
 def coral_labels(y, n_classes=5):
     thresholds = torch.arange(n_classes - 1, device=y.device).unsqueeze(0)
-    return (y.unsqueeze(1) > thresholds).float()
- 
- 
+    return (y.unsqueeze(1) > thresholds).float() 
+
 def coral_probs_to_class_probs(probs, n_classes=5):
     batch = probs.shape[0]
     p = np.zeros((batch, n_classes))
