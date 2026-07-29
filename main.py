@@ -292,13 +292,13 @@ def coral_labels(y, n_classes=5):
     return (y.unsqueeze(1) > thresholds).float()
  
  
-def coral_probs_to_class_probs(cum_probs, n_classes=5):
-    batch = cum_probs.shape[0]
+def coral_probs_to_class_probs(probs, n_classes=5):
+    batch = probs.shape[0]
     p = np.zeros((batch, n_classes))
-    p[:, 0] = 1 - cum_probs[:, 0]
+    p[:, 0] = 1 - probs[:, 0]
     for k in range(1, n_classes - 1):
-        p[:, k] = cum_probs[:, k - 1] - cum_probs[:, k]
-    p[:, n_classes - 1] = cum_probs[:, n_classes - 2]
+        p[:, k] = probs[:, k - 1] - probs[:, k]
+    p[:, n_classes - 1] = probs[:, n_classes - 2]
     p = np.clip(p, 0, None)
     p = p / p.sum(axis=1, keepdims=True)
     return p 
