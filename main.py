@@ -200,7 +200,7 @@ N_ITER = 15
 USE_ORDINAL = True
 SELECTION_METRIC = 'qwk'
 N_CLASSES = 5
-USE_SMOTE = False
+USE_SMOTE = True
 USE_OVERRIDE = True
 OVERRIDE_COLS = ['cc_cardiacarrest', 'cc_unresponsive', 'cc_strokealert']
  
