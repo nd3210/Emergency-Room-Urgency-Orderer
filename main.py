@@ -203,18 +203,7 @@ N_ITER = 15
 USE_ORDINAL = True
 SELECTION_METRIC = 'qwk'
 N_CLASSES = 5
-# Both defaulted to False based on real-data results: SMOTE's ~30x oversampling of ESI1
-# introduced more synthetic noise than signal, and the override rule was only 46% precise
-# (see per-column diagnostic below), so forcing ESI1 on those rows hurt precision more than
-# it helped recall. Flip to True to re-test either in isolation.
 USE_SMOTE = False
-# All three red-flag complaints kept as hard overrides — a deliberate safety-first choice.
-# Real-data precision: cc_cardiacarrest ~99%, cc_unresponsive ~42%, cc_strokealert ~37%
-# (see per-column diagnostic printed below). Keeping the lower-precision two means roughly
-# 58% of the patients they flag are pushed to the front of the queue despite not actually
-# being ESI1 — a real efficiency cost, accepted here in exchange for near-zero risk of
-# missing a genuine emergency on these specific complaints. Worth stating explicitly as an
-# intentional tradeoff in your writeup, not an oversight.
 USE_OVERRIDE = True
 OVERRIDE_COLS = ['cc_cardiacarrest', 'cc_unresponsive', 'cc_strokealert']
  
