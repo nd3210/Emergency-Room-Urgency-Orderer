@@ -1,36 +1,25 @@
+import json
+import os
+import random
+import time
+from collections import Counter
+ 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import accuracy_score, log_loss, mean_squared_error
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.utils.class_weight import compute_class_weight
-from torch import nn
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.utils.class_weight import compute_sample_weight
-import statsmodels.api as sm
-import mord
-import seaborn as sns
-from xgboost import XGBClassifier
-from scipy.stats import randint, uniform
 import torch
+from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
-
-df = pd.read_csv('new_emergency.csv')
-print(df.shape)
-
-X = df.iloc[:, df.columns.get_loc('cc_abdominaldistention'): ]
-y = df['esi']
-
-le = LabelEncoder()
-y_encoded = le.fit_transform(y)   # 0=ESI1 ... 4=ESI5
- 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import (
+    recall_score, classification_report, confusion_matrix,
+    accuracy_score, log_loss, f1_score, cohen_kappa_score
 )
+from sklearn.utils.class_weight import compute_class_weight, compute_sample_weight
+from imblearn.over_sampling import SMOTENC
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.pipeline import Pipeline as ImbPipeline
+import joblib
 
 # le = LabelEncoder()
 # y_encoded = le.fit_transform(y)
@@ -169,29 +158,6 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 
 #Neural Network
-import json
-import os
-import random
-import time
-from collections import Counter
- 
-import numpy as np
-import pandas as pd
-import torch
-from torch import nn
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import (
-    recall_score, classification_report, confusion_matrix,
-    accuracy_score, log_loss, f1_score, cohen_kappa_score
-)
-from sklearn.utils.class_weight import compute_class_weight, compute_sample_weight
-from imblearn.over_sampling import SMOTENC
-from imblearn.under_sampling import RandomUnderSampler
-from imblearn.pipeline import Pipeline as ImbPipeline
-import joblib
- 
 torch.manual_seed(42)
 random.seed(42)
 np.random.seed(42)
@@ -200,7 +166,6 @@ N_ITER = 15
 USE_ORDINAL = True
 SELECTION_METRIC = 'qwk'
 N_CLASSES = 5
-USE_SMOTE = True
 USE_OVERRIDE = True
 OVERRIDE_COLS = ['cc_cardiacarrest', 'cc_unresponsive', 'cc_strokealert']
  
@@ -211,11 +176,9 @@ feature_start = df.columns.get_loc('age')
 X = df.iloc[:, feature_start:].copy()
 y_raw = df['esi']
  
-object_cols = X.select_dtypes(include='object').columns.tolist()
-for col in object_cols:
-    col_le = LabelEncoder()
-    X[col] = col_le.fit_transform(X[col].astype(str))
-    print(f"encoded '{col}' as:", list(col_le.classes_))
+gender_le = LabelEncoder()
+X['gender'] = gender_le.fit_transform(X['gender'])
+print("encoded 'gender' as:", list(gender_le.classes_))
  
 cc_cols = [c for c in X.columns if c.startswith('cc_')]
 X['symptom_count'] = X[cc_cols].sum(axis=1)
@@ -227,12 +190,8 @@ print("Engineered features added. Total columns now:", X.shape[1])
 le = LabelEncoder()
 y_encoded = le.fit_transform(y_raw)
 
-override_cols_present = [c for c in OVERRIDE_COLS if c in X.columns]
-missing_override_cols = set(OVERRIDE_COLS) - set(override_cols_present)
-if override_cols_present:
-    override_mask = (X[override_cols_present].sum(axis=1) > 0).values
-else:
-    override_mask = np.zeros(len(X), dtype=bool)
+
+override_mask = (X[OVERRIDE_COLS].sum(axis=1) > 0).values
 print(f"Rows matching red-flag override rule (combined): {override_mask.sum()} "
       f"({override_mask.mean()*100:.2f}% of data)")
 if override_mask.sum() > 0:
@@ -255,52 +214,48 @@ X_train, X_val, y_train, y_val = train_test_split(
 )
 
 scaler = StandardScaler()
-X_train_arr = scaler.fit_transform(X_train).astype('float32')
-X_val_arr = scaler.transform(X_val).astype('float32')
-X_test_arr = scaler.transform(X_test).astype('float32')
+X_train = scaler.fit_transform(X_train).astype('float32')
+X_val = scaler.transform(X_val).astype('float32')
+X_test = scaler.transform(X_test).astype('float32')
  
-n_features = X_train_arr.shape[1]
+n_features = X_train.shape[1]
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print("Using device:", device)
 print("n_features:", n_features)
  
-if USE_SMOTE:
-    continuous_cols = ['age', 'symptom_count']
-    categorical_col_names = [c for c in X.columns if c not in continuous_cols]
-    categorical_indices = [X.columns.get_loc(c) for c in categorical_col_names]
+
+continuous_cols = ['age', 'symptom_count']
+categorical_col_names = [c for c in X.columns if c not in continuous_cols]
+categorical_indices = [X.columns.get_loc(c) for c in categorical_col_names]
  
-    counts = Counter(y_train)
-    target = int(np.median(list(counts.values())))
-    over_strategy = {cls: target for cls, cnt in counts.items() if cnt < target}
-    under_strategy = {cls: target for cls, cnt in counts.items() if cnt > target}
+counts = Counter(y_train)
+target = int(np.median(list(counts.values())))
+over_strategy = {cls: target for cls, cnt in counts.items() if cnt < target}
+under_strategy = {cls: target for cls, cnt in counts.items() if cnt > target}
  
-    steps = []
-    if over_strategy:
-        steps.append(('over', SMOTENC(categorical_features=categorical_indices,
+steps = []
+if over_strategy:
+    steps.append(('over', SMOTENC(categorical_features=categorical_indices,
                                        sampling_strategy=over_strategy, random_state=42)))
-    if under_strategy:
-        steps.append(('under', RandomUnderSampler(sampling_strategy=under_strategy, random_state=42)))
+if under_strategy:
+    steps.append(('under', RandomUnderSampler(sampling_strategy=under_strategy, random_state=42)))
  
-    if steps:
-        resample_pipeline = ImbPipeline(steps)
-        X_train_arr, y_train = resample_pipeline.fit_resample(X_train_arr, y_train)
+if steps:
+    resample_pipeline = ImbPipeline(steps)
+    X_train, y_train = resample_pipeline.fit_resample(X_train, y_train)
  
-    print("After resampling, train class distribution:",
-          dict(zip(*np.unique(y_train, return_counts=True))))
-    sample_weights_train = np.ones(len(y_train), dtype='float32')
-    class_weights_tensor = torch.ones(N_CLASSES, dtype=torch.float32)
-else:
-    sample_weights_train = compute_sample_weight('balanced', y=y_train)
-    class_weights_arr = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
-    class_weights_tensor = torch.tensor(class_weights_arr, dtype=torch.float32)
+print("After resampling, train class distribution:",
+      dict(zip(*np.unique(y_train, return_counts=True))))
+sample_weights_train = np.ones(len(y_train), dtype='float32')
+class_weights_tensor = torch.ones(N_CLASSES, dtype=torch.float32)
 
  
-X_train_t = torch.tensor(X_train_arr.astype('float32'))
+X_train_t = torch.tensor(X_train.astype('float32'))
 y_train_t = torch.tensor(y_train, dtype=torch.long)
 sw_train_t = torch.tensor(sample_weights_train, dtype=torch.float32)
-X_val_tensor = torch.tensor(X_val_arr)
+X_val_tensor = torch.tensor(X_val)
 y_val_tensor = torch.tensor(y_val, dtype=torch.long)
-X_test_tensor = torch.tensor(X_test_arr)
+X_test_tensor = torch.tensor(X_test)
 y_test_tensor = torch.tensor(y_test, dtype=torch.long)
  
 train_dataset = TensorDataset(X_train_t, y_train_t, sw_train_t)
@@ -341,13 +296,13 @@ def coral_labels(y, n_classes=5):
     return (y.unsqueeze(1) > thresholds).float()
  
  
-def coral_probs_to_class_probs(cum_probs, n_classes=5):
-    batch = cum_probs.shape[0]
+def coral_probs_to_class_probs(probs, n_classes=5):
+    batch = probs.shape[0]
     p = np.zeros((batch, n_classes))
-    p[:, 0] = 1 - cum_probs[:, 0]
+    p[:, 0] = 1 - probs[:, 0]
     for k in range(1, n_classes - 1):
-        p[:, k] = cum_probs[:, k - 1] - cum_probs[:, k]
-    p[:, n_classes - 1] = cum_probs[:, n_classes - 2]
+        p[:, k] = probs[:, k - 1] - probs[:, k]
+    p[:, n_classes - 1] = probs[:, n_classes - 2]
     p = np.clip(p, 0, None)
     p = p / p.sum(axis=1, keepdims=True)
     return p 
@@ -509,9 +464,8 @@ with open('model_artifacts/nn_search_best_config.json', 'w') as f:
     json.dump({
         **{k: (list(v) if isinstance(v, tuple) else v) for k, v in best_overall['config'].items()},
         'use_ordinal': USE_ORDINAL,
-        'use_smote': USE_SMOTE,
         'selection_metric': SELECTION_METRIC,
-        'override_cols': override_cols_present,
+        'override_cols': OVERRIDE_COLS,
         'n_features': n_features,
         'n_classes': N_CLASSES,
     }, f)
